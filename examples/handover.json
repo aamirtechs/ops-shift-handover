@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-28",
+  "shift": "Night",
+  "team": "Support",
+  "outgoing": "Ayesha",
+  "incoming": "Bilal",
+  "summary": ["Queue cleared to zero at handover.", "One billing incident stayed open, see below."],
+  "open_incidents": [
+    {"id": "INC-1001", "severity": "high", "title": "Billing page timeout", "status": "investigating", "next_step": "Check payment gateway logs at 09:00."}
+  ],
+  "pending_tasks": ["Reply to ticket 4521 about refund timing."],
+  "watch_items": ["Traffic spike expected at 10:00 during the sale."]
+}
