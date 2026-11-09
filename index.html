@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ops-shift-handover</title>
+<style>
+*{box-sizing:border-box} body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#f6f8fb;color:#17233b}
+header{background:#0b1f3a;color:#fff;padding:28px 20px;border-bottom:4px solid #d4a72c}
+header .wrap, main{max-width:900px;margin:0 auto}
+header h1{margin:0 0 6px;font-size:28px} header p{margin:0;color:#cfd9e8}
+main{padding:22px 16px 40px}
+.card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 10px rgba(11,31,58,.08)}
+label{font-weight:600;display:block;margin:14px 0 6px}
+textarea{width:100%;min-height:170px;padding:10px;border:1px solid #c9d3e0;border-radius:8px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+textarea.small{min-height:90px}
+input[type=text],input[type=number],select{padding:8px 10px;border:1px solid #c9d3e0;border-radius:8px;max-width:100%}
+.row{display:flex;flex-wrap:wrap;gap:14px} .row>div{flex:1 1 180px}
+button{background:#0b1f3a;color:#fff;border:0;border-radius:8px;padding:10px 18px;cursor:pointer;font-size:15px}
+button.accent{background:#d4a72c;color:#17233b;font-weight:700}
+button.secondary{background:#e7edf5;color:#0b1f3a}
+.btns{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+pre{background:#0b1f3a;color:#eef3fa;border-radius:10px;padding:16px;overflow:auto;white-space:pre-wrap;min-height:120px;font-size:13px}
+footer{max-width:900px;margin:0 auto;padding:0 16px 30px;color:#5a6a82;font-size:14px}
+a{color:#0b1f3a}
+.note{color:#5a6a82;font-size:13px}
+.checkline{font-weight:400;display:flex;gap:8px;align-items:center;margin-top:14px}
+</style>
+</head>
+<body>
+<header><div class="wrap"><h1>ops-shift-handover</h1><p>Assemble a shift handover note for support and ops teams from a JSON file.</p></div></header>
+<main>
+<div class="card">
+<label for="file">Choose a file</label>
+<input type="file" id="file">
+<label for="input">Handover JSON input</label>
+<textarea id="input" placeholder="Paste the handover JSON here, choose a file, or load the sample."></textarea>
+<div class="row"><div><label for="format">Output format (CLI --format, default md)</label><select id="format"><option value="md">md</option><option value="txt">txt</option></select></div></div>
+<label class="checkline"><input type="checkbox" id="check"> Validate only (CLI --check)</label>
+<div class="btns">
+<button class="accent" id="run">Run</button>
+<button class="secondary" id="sample">Load sample</button>
+<button class="secondary" id="download">Download report</button>
+</div>
+<label for="output">Report</label>
+<pre id="output">Press Run to see the report.</pre>
+</div>
+</main>
+<footer>
+<p>Built by AamirTechs. <a href="https://aamirtechs.github.io/">All tools</a> | <a href="https://github.com/aamirtechs/ops-shift-handover">Source</a></p>
+<p>Privacy: this tool runs 100% in your browser, nothing is uploaded.</p>
+</footer>
+<script id="core">
+
+function pyVal(v){ if(v===null) return "None"; if(v===undefined) return ""; if(v===true) return "True"; if(v===false) return "False"; return String(v); }
+var REQUIRED = ["date","shift","team","outgoing","incoming"];
+var SEVERITY_ORDER = {"critical":0,"high":1,"medium":2,"low":3};
+function validate(data){
+  var problems = [];
+  if(!data || typeof data !== "object" || Array.isArray(data)) return ["input must be a JSON object"];
+  REQUIRED.forEach(function(f){ if(!data[f]) problems.push("missing required field: " + f); });
+  ["summary","pending_tasks","watch_items"].forEach(function(f){
+    if(f in data){
+      if(!Array.isArray(data[f])) problems.push(f + " must be a list of strings");
+      else data[f].forEach(function(item){ if(typeof item !== "string") problems.push(f + " must contain only strings"); });
+    }
+  });
+  var incidents = ("open_incidents" in data) ? data.open_incidents : [];
+  if(!Array.isArray(incidents)) problems.push("open_incidents must be a list");
+  else incidents.forEach(function(inc){
+    if(!inc || typeof inc !== "object" || Array.isArray(inc)){ problems.push("each open incident must be an object"); return; }
+    ["id","title","status"].forEach(function(f){ if(!inc[f]) problems.push("open incident missing required field: " + f); });
+  });
+  return problems;
+}
+function sevRank(inc){
+  var raw = (!inc || inc.severity === undefined) ? "" : (inc.severity === null ? "None" : String(inc.severity));
+  var r = SEVERITY_ORDER[raw.toLowerCase()];
+  return r === undefined ? 4 : r;
+}
+function sortIncidents(list){
+  return list.slice().sort(function(a,b){
+    var ra = sevRank(a), rb = sevRank(b);
+    if(ra !== rb) return ra - rb;
+    var ia = (!a || a.id === undefined) ? "" : (a.id === null ? "None" : String(a.id));
+    var ib = (!b || b.id === undefined) ? "" : (b.id === null ? "None" : String(b.id));
+    return ia < ib ? -1 : ia > ib ? 1 : 0;
+  });
+}
+function truthyList(v){ return Array.isArray(v) && v.length > 0; }
+function renderMd(data){
+  var lines = [];
+  lines.push("# Shift handover: " + pyVal(data.team) + ", " + pyVal(data.shift) + " shift, " + pyVal(data.date));
+  lines.push("");
+  lines.push("Outgoing: " + pyVal(data.outgoing) + "  |  Incoming: " + pyVal(data.incoming));
+  lines.push("");
+  if(truthyList(data.summary)){
+    lines.push("## Summary");
+    data.summary.forEach(function(item){ lines.push("- " + pyVal(item)); });
+    lines.push("");
+  }
+  var incidents = sortIncidents(Array.isArray(data.open_incidents) ? data.open_incidents : []);
+  if(incidents.length){
+    lines.push("## Open incidents");
+    incidents.forEach(function(inc){
+      var sev = inc.severity !== undefined ? pyVal(inc.severity) : "unspecified";
+      lines.push("- **" + pyVal(inc.id) + "** [" + sev + "] " + pyVal(inc.title) + " (" + pyVal(inc.status) + ")");
+      if(inc.next_step) lines.push("  - Next step: " + pyVal(inc.next_step));
+    });
+    lines.push("");
+  }
+  if(truthyList(data.pending_tasks)){
+    lines.push("## Pending tasks");
+    data.pending_tasks.forEach(function(item){ lines.push("- [ ] " + pyVal(item)); });
+    lines.push("");
+  }
+  if(truthyList(data.watch_items)){
+    lines.push("## Watch items");
+    data.watch_items.forEach(function(item){ lines.push("- " + pyVal(item)); });
+    lines.push("");
+  }
+  if(!truthyList(data.summary) && !incidents.length && !truthyList(data.pending_tasks) && !truthyList(data.watch_items)){
+    lines.push("Nothing to hand over. All clear.");
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+function renderTxt(data){
+  var text = renderMd(data);
+  text = text.split("# ").join("");
+  text = text.split("## ").join("");
+  text = text.split("**").join("");
+  text = text.split("- [ ] ").join("- ");
+  return text;
+}
+window.runTool = function(inputText, options){
+  options = options || {};
+  var data;
+  try { data = JSON.parse(String(inputText == null ? "" : inputText)); }
+  catch(e){ return "error: invalid JSON: " + e.message; }
+  var problems = validate(data);
+  if(options.check){
+    if(problems.length) return problems.map(function(p){ return "error: " + p; }).join("\n");
+    return "ok: handover input is valid";
+  }
+  if(problems.length) return problems.map(function(p){ return "error: " + p; }).join("\n");
+  var text = options.format === "txt" ? renderTxt(data) : renderMd(data);
+  return text.replace(/\n$/, "");
+};
+
+</script>
+<script>
+var SAMPLE = `{
+  "date": "2026-10-28",
+  "shift": "Night",
+  "team": "Support",
+  "outgoing": "Ayesha",
+  "incoming": "Bilal",
+  "summary": ["Queue cleared to zero at handover.", "One billing incident stayed open, see below."],
+  "open_incidents": [
+    {"id": "INC-1001", "severity": "high", "title": "Billing page timeout", "status": "investigating", "next_step": "Check payment gateway logs at 09:00."}
+  ],
+  "pending_tasks": ["Reply to ticket 4521 about refund timing."],
+  "watch_items": ["Traffic spike expected at 10:00 during the sale."]
+}
+`;
+var inputEl = document.getElementById("input");
+var outputEl = document.getElementById("output");
+document.getElementById("file").addEventListener("change", function(ev){
+  var f = ev.target.files[0]; if(!f) return;
+  var r = new FileReader(); r.onload = function(){ inputEl.value = r.result; }; r.readAsText(f);
+});
+function gatherOptions(){ return { format: document.getElementById("format").value, check: document.getElementById("check").checked }; }
+document.getElementById("run").addEventListener("click", function(){
+  try { outputEl.textContent = window.runTool(inputEl.value, gatherOptions()); }
+  catch(e){ outputEl.textContent = "Error: " + e.message; }
+});
+document.getElementById("sample").addEventListener("click", function(){
+  inputEl.value = SAMPLE;
+  if (window.onSample) window.onSample();
+});
+document.getElementById("download").addEventListener("click", function(){
+  var blob = new Blob([outputEl.textContent], {type:"text/plain"});
+  var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "report.txt"; a.click(); URL.revokeObjectURL(a.href);
+});
+
+</script>
+</body>
+</html>

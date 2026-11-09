@@ -1,4 +1,5 @@
 # ops-shift-handover
+**Live tool:** https://aamirtechs.github.io/ops-shift-handover/ (runs in your browser, no install)
 
 Assemble a shift handover note for support and ops teams from a JSON file.
 One command turns the outgoing shift's notes into a readable handover the
